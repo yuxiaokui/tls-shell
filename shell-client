@@ -1,0 +1,55 @@
+package main
+
+import (
+	"crypto/tls"
+	"fmt"
+	"io"
+	"log"
+	"net"
+)
+
+func main() {
+	lis, err := net.Listen("tcp", "0.0.0.0:26262")
+	if err != nil {
+		log.Println(err)
+	}
+	defer lis.Close()
+
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			continue
+		}
+		fmt.Println("working....\n")
+		go handle(conn)
+	}
+}
+
+func handle(sconn net.Conn) {
+	defer sconn.Close()
+
+	conf := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	dconn, err := tls.Dial("tcp", "Server-Ip:8443", conf)
+
+	if err != nil {
+		log.Printf("Error:%v\n", err)
+		return
+	}
+
+	ExitChan := make(chan bool, 1)
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		log.Println(dconn.Read)
+		io.Copy(dconn, sconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		io.Copy(sconn, dconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+	<-ExitChan
+	dconn.Close()
+}
