@@ -1,0 +1,62 @@
+package main
+
+import (
+	"crypto/tls"
+	"io"
+	"log"
+	"net"
+)
+
+func main() {
+	cert, err := tls.LoadX509KeyPair("certs/server.pem", "certs/server.key")
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	config := &tls.Config{Certificates: []tls.Certificate{cert}}
+	log.Println("Starting...")
+
+	ln, err := tls.Listen("tcp", ":8443", config)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer ln.Close()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println("Error:%v\n", err)
+			continue
+		}
+		go handle(conn, "127.0.0.1:26262")
+	}
+}
+
+func handle(sconn net.Conn, target string) {
+	defer sconn.Close()
+
+	ip := target
+	dconn, err := net.Dial("tcp", ip)
+
+	if err != nil {
+		log.Printf("Error:%v\n", err)
+		return
+	}
+
+	ExitChan := make(chan bool, 1)
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		log.Println(dconn.Read)
+		io.Copy(dconn, sconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		io.Copy(sconn, dconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+	<-ExitChan
+	dconn.Close()
+}
